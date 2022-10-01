@@ -10,26 +10,56 @@ import os
 import random
 import models.networks as networks
 
+import lib.sanitize as sanitize
+
 class ScreenVAE(nn.Module):
-    def __init__(self,inc=1,outc=4, outplanes=64, downs=5, blocks=2,load_ext=True, save_dir='checkpoints/ScreenVAE',
-        init_type="normal", init_gain=0.02, gpu_ids=[]):
+    def __init__(
+        self,
+        inc=1,
+        outc=4,
+        outplanes=64,
+        downs=5,
+        blocks=2,
+        load_ext=True,
+        save_dir='checkpoints/ScreenVAE',
+        init_type="normal",
+        init_gain=0.02,
+        device=None
+    ):
         super(ScreenVAE, self).__init__()
         self.inc = inc
         self.outc = outc
         self.save_dir = save_dir
         self.model_names=['enc','dec']
-        self.enc=networks.define_C(inc+1, outc*2, 24, netC='resnet_6blocks', 
-                                      norm='layer', nl='lrelu', use_dropout=True, 
-                                      gpu_ids=gpu_ids, upsample='bilinear')
-        self.dec=networks.define_G(outc, inc, 48, netG='unet_128_G', 
-                                      norm='layer', nl='lrelu', use_dropout=True, 
-                                      gpu_ids=gpu_ids, where_add='input', upsample='bilinear', use_noise=True)
+        self.enc=networks.define_C(
+            inc+1,
+            outc*2,
+            24,
+            netC='resnet_6blocks',
+            norm='layer',
+            nl='lrelu',
+            use_dropout=True, 
+            device=device,
+            upsample='bilinear'
+        )
+        self.dec=networks.define_G(
+            outc,
+            inc,
+            48,
+            netG='unet_128_G', 
+            norm='layer',
+            nl='lrelu',
+            use_dropout=True,
+            device=device,
+            where_add='input',
+            upsample='bilinear',
+            use_noise=True
+        )
         self.load_networks('latest')
         for param in self.parameters():
             param.requires_grad = False
 
     def load_networks(self, epoch):
-
         for name in self.model_names:
             if isinstance(name, str):
                 load_filename = '%s_net_%s.pth' % (epoch, name)
@@ -39,19 +69,17 @@ class ScreenVAE(nn.Module):
                     net = net.module
                 print('loading the model from %s' % load_path)
                 state_dict = torch.load(
-                    load_path, map_location=lambda storage, loc: storage.cuda())
+                    load_path, map_location=lambda storage, loc: sanitize.todev(storage))
                 if hasattr(state_dict, '_metadata'):
                     del state_dict._metadata
 
                 net.load_state_dict(state_dict)
                 del state_dict
 
-    def load_gaborext(self, gpu_ids=[]):
+    def load_gaborext(self, device=None):
         self.gaborext = GaborWavelet()
         self.gaborext.eval()
-        if len(gpu_ids) > 0:
-            assert(torch.cuda.is_available())
-            self.gaborext.to(gpu_ids[0])
+        self.gaborext.to(device)
 
     def npad(self, im, pad=128):
         h,w = im.shape[-2:]

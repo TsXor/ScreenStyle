@@ -1,11 +1,13 @@
 import torch
 import torch.nn as nn
-from torch.nn import init
-import functools
-from torch.optim import lr_scheduler
-import numpy as np
 import torch.nn.functional as F
-from torch.nn.modules.normalization import LayerNorm
+import torch.nn.init as init
+import torch.nn.modules.normalization as t_n; LayerNorm = t_n.LayerNorm
+import torch.optim.lr_scheduler as lr_scheduler
+import functools
+import numpy as np
+
+import lib.sanitize as sanitize
 
 ###############################################################################
 # Helper functions
@@ -44,18 +46,16 @@ def init_weights(net, init_type='normal', init_gain=0.02):
     net.apply(init_func)  # apply the initialization function <init_func>
 
 
-def init_net(net, init_type='normal', init_gain=0.02, gpu_ids=[], init=True):
-    """Initialize a network: 1. register CPU/GPU device (with multi-GPU support); 2. initialize the network weights
+def init_net(net, init_type='normal', init_gain=0.02, device=None, init=True):
+    """Initialize a network: initialize the network weights
     Parameters:
-        net (network)      -- the network to be initialized
-        init_type (str)    -- the name of an initialization method: normal | xavier | kaiming | orthogonal
-        gain (float)       -- scaling factor for normal, xavier and orthogonal.
-        gpu_ids (int list) -- which GPUs the network runs on: e.g., 0,1,2
+        net (network)         -- the network to be initialized
+        init_type (str)       -- the name of an initialization method: normal | xavier | kaiming | orthogonal
+        gain (float)          -- scaling factor for normal, xavier and orthogonal.
+        device (torch.device) -- a torch device
     Return an initialized network.
     """
-    if len(gpu_ids) > 0:
-        assert(torch.cuda.is_available())
-        net.to(gpu_ids[0])
+    net.to(device)
     if init:
         init_weights(net, init_type, init_gain=init_gain)
     return net
@@ -86,8 +86,7 @@ class LayerNormWarpper(nn.Module):
         self.num_features = int(num_features)
 
     def forward(self, x):
-        x = nn.LayerNorm([self.num_features, x.size()[2], x.size()[3]], elementwise_affine=False).cuda()(x)
-        return x
+        return sanitize.todev(nn.LayerNorm([self.num_features, *x.size()[2:3+1]], elementwise_affine=False))(x)
 
 def get_non_linearity(layer_type='relu'):
     if layer_type == 'relu':
@@ -123,25 +122,49 @@ class ApplyNoise(nn.Module):
         adds = w * torch.randn_like(x) + b
         return x + adds.type_as(x)
 
-def define_G(input_nc, output_nc, ngf, netG='unet_128', norm='layer', nl='lrelu', use_noise=False, level=0,
-             use_dropout=False, init_type='xavier', init_gain=0.02, gpu_ids=[], where_add='input', upsample='bilinear'):
+def define_G(
+    input_nc,
+    output_nc,
+    ngf,
+    netG='unet_128',
+    norm='layer',
+    nl='lrelu',
+    use_noise=False,
+    level=0,
+    use_dropout=False,
+    init_type='xavier',
+    init_gain=0.02,
+    device=None,
+    where_add='input',
+    upsample='bilinear'
+):
     net = None
     norm_layer = get_norm_layer(norm_type=norm)
     nl_layer = get_non_linearity(layer_type=nl)
 
     if netG == 'unet_128_G' and where_add == 'input':
         net = G_Unet_add_input_G(input_nc, output_nc, 7, ngf, norm_layer=norm_layer, nl_layer=nl_layer, use_noise=use_noise,
-                               use_dropout=use_dropout, upsample=upsample, device=gpu_ids)
+                               use_dropout=use_dropout, upsample=upsample)
     elif netG == 'unet_256_G' and where_add == 'input':
         net = G_Unet_add_input_G(input_nc, output_nc, 8, ngf, norm_layer=norm_layer, nl_layer=nl_layer, use_noise=use_noise,
-                               use_dropout=use_dropout, upsample=upsample, device=gpu_ids)
+                               use_dropout=use_dropout, upsample=upsample)
     else:
         raise NotImplementedError('Generator model name [%s] is not recognized' % net)
-    return init_net(net, init_type, init_gain, gpu_ids)
+    return init_net(net, init_type, init_gain, device)
 
 
-def define_C(input_nc, output_nc, ngf, netC='unet_128', norm='instance', nl='relu',
-             use_dropout=False, init_type='normal', init_gain=0.02, gpu_ids=[], upsample='basic'):
+def define_C(
+    input_nc,
+    output_nc,
+    ngf,
+    netC='unet_128',
+    norm='instance', nl='relu',
+    use_dropout=False,
+    init_type='normal',
+    init_gain=0.02,
+    device=None,
+    upsample='basic'
+):
     net = None
     norm_layer = get_norm_layer(norm_type=norm)
     nl_layer = get_non_linearity(layer_type=nl)
@@ -153,12 +176,21 @@ def define_C(input_nc, output_nc, ngf, netC='unet_128', norm='instance', nl='rel
     else:
         raise NotImplementedError('Generator model name [%s] is not recognized' % net)
 
-    return init_net(net, init_type, init_gain, gpu_ids)
+    return init_net(net, init_type, init_gain, device)
 
 class G_Unet_add_input_G(nn.Module):
-    def __init__(self, input_nc, output_nc, num_downs, ngf=64, 
-                 norm_layer=None, nl_layer=None, use_dropout=False, use_noise=False,
-                 upsample='basic', device=0):
+    def __init__(
+        self,
+        input_nc,
+        output_nc,
+        num_downs,
+        ngf=64,
+        norm_layer=None,
+        nl_layer=None,
+        use_dropout=False,
+        use_noise=False,
+        upsample='basic',
+    ):
         super(G_Unet_add_input_G, self).__init__()
         max_nchn = 8
         # construct unet structure
