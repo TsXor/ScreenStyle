@@ -87,25 +87,19 @@ class ScreenVAE(nn.Module):
         wp = w //pad*pad+pad
         return F.pad(im, (0, wp-w, 0, hp-h), mode='constant',value=1)
 
-    def forward(self, x, line=None, screen=False, rep=False):
-        if line is None:
-            line = torch.ones_like(x)
-        else:
+    def forward(self, mode, *input):
+        if mode=='encode':
+            img, line = input
             line = torch.sign(line)
-            x = torch.clamp(x + (1-line),-1,1)
-        if not screen:
-            input = torch.cat([x, line], 1)
-            # input = F.pad(input, (32, 32, 32, 32), mode='constant',value=1)
-            inter = self.enc(input)
+            img = torch.clamp(img + (1-line), -1, 1)
+            inter = self.enc(torch.cat([img, line], 1))
             scr, logvar = torch.split(inter, (self.outc, self.outc), dim=1)#[:,:,32:-32,32:-32]
             # scr = scr*torch.sign(line+1)
-            if rep:
-                return scr
-            recons = self.dec(scr)
-            return recons, scr#, logvar
-        else:
-            h,w = x.shape[-2:]
-            x = self.npad(x)
-            recons = self.dec(x)[:,:,:h,:w]
-            recons = (recons+1)*(line+1)/2-1
-            return torch.clamp(recons,-1,1)
+            return scr
+        elif mode=='decode':
+            smap = input[0]
+            recons = self.dec(smap)
+            #recons = (recons+1)*(line+1)/2-1
+            #recons = torch.clamp(recons,-1,1) # 理论上上一行得到的结果已在[-1, 1]范围内，这行只是保险
+            # 默认line = torch.ones_like(smap)，因此上两行其实都是不必要的（铸币吧这！）
+            return recons
