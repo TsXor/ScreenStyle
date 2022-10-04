@@ -9,7 +9,7 @@ For example, given the manga image with screentone, our model is able to generat
 
 
 ## Prerequisites
-- Linux 
+- Linux or Windows
 - Python 3
 - CPU or NVIDIA GPU + CUDA CuDNN
 
@@ -36,7 +36,7 @@ Examples:
 ### Screentone Editing
 - Edit screentones by modifying the value in the intermediate domain:
 ```
-python gui_edit.py 
+python edit.py 
 ```
 
 Examples:
@@ -57,18 +57,19 @@ import lib.sanitize as sanitize
 
 # Initialize an API object.
 # You can choose to load other directories under checkpoints/ by passing their name as argument.
-rec = SVAE()
+# It is recommended to freeze the seed for ramdom number to 0 to replicate the performance in paper.
+rec = SVAE(freeze_seed=0)
 # Read image. Friendly to Chinese paths.
 img = sanitize.PILread('examples/manga.png')
 line = sanitize.PILread('examples/line.png')
-# Get screenmap with get_screenmap method.
-scr = rec.get_screenmap(img, line)
-# Get PCA image with get_pca method.
+# Get screenmap with img2map method.
+scr = rec.img2map(img, line)
+# Convert screenmap to visual image with get_pca method.
 PCAimg = rec.get_pca(scr)
-# Get recons image with get_recons method.
-# This function is used internally in apply_screenmap method, and I don't know what it will do.
-reconimg = rec.get_recons(scr)
-# Get re-toned image with apply_screenmap method.
-# Note that you need to give a seed point to decide where to be filled.
-retoned = rec.apply_screenmap(img, scr, seedpt=(25, 75))
+# Convert screenmap back to screentone with map2img method.
+retone = rec.map2img(scr)
+# You may make use of lines like this:
+retone = np.where(line<128, line, retone)
+# You can get a quick view of result like this:
+sanitize.PILshow(retone)
 ```
