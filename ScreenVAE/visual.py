@@ -3,8 +3,9 @@ from PIL import ImageTk, Image
 
 import torch
 import numpy as np
-from api import ScreenVAE_rec as SVAE
+from .api import ScreenVAE_rec as SVAE
 
+from .lib import sanitize as sanitize
 
 PROJECT_PATH = pathlib.Path(__file__).parent
 PROJECT_UI = PROJECT_PATH / "view_pattern.ui"

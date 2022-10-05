@@ -7,7 +7,7 @@ import torch.optim.lr_scheduler as lr_scheduler
 import functools
 import numpy as np
 
-import lib.sanitize as sanitize
+from ..lib import sanitize as sanitize
 
 ###############################################################################
 # Helper functions

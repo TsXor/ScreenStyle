@@ -1,11 +1,11 @@
 import torch
-from models.screenvae import ScreenVAE
+from .models.screenvae import ScreenVAE
 
 import numpy as np
 from sklearn.decomposition import PCA
 
 import pathlib
-import lib.sanitize as sanitize
+from .lib import sanitize as sanitize
 
 
 def path_check(thing, type='img'):
@@ -26,7 +26,8 @@ class ScreenVAE_rec:
             torch.cuda.manual_seed(self.freeze_seed)
             np.random.seed(self.freeze_seed)
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.model = ScreenVAE(inc=1, outc=4, blocks=3, save_dir='checkpoints/%s'%model_name, device=device)
+        main_dir = pathlib.Path(__file__).parent
+        self.model = ScreenVAE(inc=1, outc=4, blocks=3, save_dir=str(main_dir/'checkpoints'/model_name), device=device)
 
     def eval(self, mode, *input):
         if mode=='encode':

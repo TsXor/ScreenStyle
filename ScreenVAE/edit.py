@@ -1,8 +1,8 @@
-from api import ScreenVAE_rec as SVAE
+from .api import ScreenVAE_rec as SVAE
 import matplotlib.pyplot as plt
 import tkinter.filedialog as tkfd
 import pathlib
-import lib.sanitize as sanitize
+from .lib import sanitize as sanitize
 import numpy as np
 from skimage.segmentation import flood, flood_fill
 

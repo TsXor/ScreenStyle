@@ -6,11 +6,11 @@ import numpy as np
 from torch.optim import lr_scheduler
 import functools
 import os
-# from models.SuperPixelPool.suppixpool_layer import AveSupPixPool,SupPixUnpool
+# from .SuperPixelPool.suppixpool_layer import AveSupPixPool,SupPixUnpool
 import random
-import models.networks as networks
+from . import networks as networks
 
-import lib.sanitize as sanitize
+from ..lib import sanitize as sanitize
 
 class ScreenVAE(nn.Module):
     def __init__(
