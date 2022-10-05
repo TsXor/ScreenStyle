@@ -17,10 +17,11 @@ def fillin_smap(img, scr, seedpt=(10,10)):
     return filled
 
 
-if __name__ == '__main__':
-    imdir = tkfd.askdirectory(title='choose input directory of pictures')
-    imdir = imdir if imdir else 'examples' # default to examples if cancelled
-    imdir = pathlib.Path(imdir)
+def main(imdir=None):
+    if imdir is None:
+        imdir = tkfd.askdirectory(title='choose input directory of pictures')
+        imdir = imdir if imdir else 'examples' # default to examples if cancelled
+        imdir = pathlib.Path(imdir)
     rec = SVAE(freeze_seed=0)
     img = sanitize.PILread(imdir/'manga.png')
     line = sanitize.PILread(imdir/'line.png')
@@ -69,3 +70,6 @@ if __name__ == '__main__':
     ax[2].set_title('Re-toned'); ax[2].axis('off')
     
     plt.show()
+
+if __name__ == '__main__':
+    main()

@@ -1,11 +1,22 @@
 import torch
-import torch.nn.functional as F
 from models.screenvae import ScreenVAE
 
 import numpy as np
 from sklearn.decomposition import PCA
 
+import pathlib
 import lib.sanitize as sanitize
+
+
+def path_check(thing, type='img'):
+    if isinstance(thing, str) or isinstance(thing, pathlib.Path):
+        if type=='img':
+            arr = sanitize.PILopen(thing)
+        elif type=='npy':
+            arr = np.load(thing)
+    elif isinstance(thing, np.ndarray):
+        arr = thing
+    return arr
 
 class ScreenVAE_rec:
     def __init__(self, model_name='ScreenVAE', freeze_seed=None):
@@ -63,9 +74,12 @@ class ScreenVAE_rec:
             return
 
     def img2map(self, img, line):
+        img = path_check(img)
+        line = path_check(line)
         return self.eval('encode', img, line)
 
     def map2img(self, scr):
+        scr = path_check(scr, type='npy')
         return self.eval('decode', scr)
 
     @staticmethod

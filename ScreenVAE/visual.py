@@ -9,6 +9,7 @@ from api import ScreenVAE_rec as SVAE
 PROJECT_PATH = pathlib.Path(__file__).parent
 PROJECT_UI = PROJECT_PATH / "view_pattern.ui"
 w, h = (768, 256)
+rec = None
 
 
 def generate_gradient(cl1, cl2):
@@ -52,8 +53,11 @@ class ViewPatternApp:
         self.img_label.image = patt_tk
 
 
-if __name__ == "__main__":
+def main():
+    global rec
     rec = SVAE(freeze_seed=0)
     app = ViewPatternApp()
     app.run()
 
+if __name__ == "__main__":
+    main()
