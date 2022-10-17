@@ -1,11 +1,13 @@
-import pygubu, pathlib
+import pygubu, pathlib, sys
 from PIL import ImageTk, Image
 
 import torch
 import numpy as np
-from .api import ScreenVAE_rec as SVAE
 
-from .lib import sanitize as sanitize
+PROJECT_ROOT = pathlib.Path(__file__).parent / '..'
+sys.path.append(str(PROJECT_ROOT))
+from ScreenVAE import SVAE
+import sanitize
 
 PROJECT_PATH = pathlib.Path(__file__).parent
 PROJECT_UI = PROJECT_PATH / "view_pattern.ui"
@@ -46,8 +48,7 @@ class ViewPatternApp:
         scale_values = tuple(s.get() for s in self.scale_objs)
         cl1 = scale_values[0:4]; cl2 = scale_values[4:8]
         smap = generate_gradient(cl1, cl2).transpose(2,0,1)
-        with torch.no_grad():
-            patt = rec.map2img(smap)
+        patt = rec.map2img(smap)
         patt = patt[32:-32,:].astype(np.uint8)
         patt_tk = ImageTk.PhotoImage(Image.fromarray(patt))
         self.img_label.configure(image=patt_tk)

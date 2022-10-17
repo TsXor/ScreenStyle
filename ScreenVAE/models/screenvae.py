@@ -2,15 +2,14 @@ from __future__ import print_function
 import torch
 import torch.nn.functional as F
 import torch.nn as nn
-import numpy as np
-from torch.optim import lr_scheduler
-import functools
 import os
 # from .SuperPixelPool.suppixpool_layer import AveSupPixPool,SupPixUnpool
-import random
-from . import networks as networks
 
-from ..lib import sanitize as sanitize
+import pathlib, sys
+PROJECT_ROOT = pathlib.Path(__file__).parent / '..' / '..'
+sys.path.append(str(PROJECT_ROOT))
+import sanitize, networks
+
 
 class ScreenVAE(nn.Module):
     def __init__(
@@ -45,6 +44,7 @@ class ScreenVAE(nn.Module):
         self.dec=networks.define_G(
             outc,
             inc,
+            0,
             48,
             netG='unet_128_G', 
             norm='layer',
@@ -55,51 +55,49 @@ class ScreenVAE(nn.Module):
             upsample='bilinear',
             use_noise=True
         )
+        self.device = device
         self.load_networks('latest')
-        for param in self.parameters():
-            param.requires_grad = False
 
     def load_networks(self, epoch):
         for name in self.model_names:
-            if isinstance(name, str):
-                load_filename = '%s_net_%s.pth' % (epoch, name)
-                load_path = os.path.join(self.save_dir, load_filename)
-                net = getattr(self, name)
-                if isinstance(net, torch.nn.DataParallel):
-                    net = net.module
-                print('loading the model from %s' % load_path)
-                state_dict = torch.load(
-                    load_path, map_location=lambda storage, loc: sanitize.todev(storage))
-                if hasattr(state_dict, '_metadata'):
-                    del state_dict._metadata
-
-                net.load_state_dict(state_dict)
-                del state_dict
+            load_filename = '%s_net_%s.pth' % (epoch, name)
+            load_path = os.path.join(self.save_dir, load_filename)
+            net = getattr(self, name)
+            print('loading the model from %s' % load_path)
+            state_dict = torch.load(load_path, map_location=self.device)
+            if hasattr(state_dict, '_metadata'):
+                del state_dict._metadata
+            net.load_state_dict(state_dict)
+            del state_dict
 
     def load_gaborext(self, device=None):
         self.gaborext = GaborWavelet()
         self.gaborext.eval()
         self.gaborext.to(device)
 
-    def npad(self, im, pad=128):
-        h,w = im.shape[-2:]
-        hp = h //pad*pad+pad
-        wp = w //pad*pad+pad
-        return F.pad(im, (0, wp-w, 0, hp-h), mode='constant',value=1)
-
     def forward(self, mode, *input):
         if mode=='encode':
             img, line = input
             line = torch.sign(line)
+            sizey, sizex = img.shape[-2:]
+            img = sanitize.modpad_tensor(img, (0, 0, 16, 16))
+            line = sanitize.modpad_tensor(line, (0, 0, 16, 16))
             img = torch.clamp(img + (1-line), -1, 1)
             inter = self.enc(torch.cat([img, line], 1))
             scr, logvar = torch.split(inter, (self.outc, self.outc), dim=1)#[:,:,32:-32,32:-32]
             # scr = scr*torch.sign(line+1)
-            return scr
+            scr = scr[..., :sizey, :sizex]
+            return scr, logvar
         elif mode=='decode':
-            smap = input[0]
+            smap, line = input
+            sizey, sizex = smap.shape[-2:]
+            smap = sanitize.modpad_tensor(smap, (0, 0, 128, 128))
             recons = self.dec(smap)
-            #recons = (recons+1)*(line+1)/2-1
-            #recons = torch.clamp(recons,-1,1) # 理论上上一行得到的结果已在[-1, 1]范围内，这行只是保险
-            # 默认line = torch.ones_like(smap)，因此上两行其实都是不必要的（铸币吧这！）
+            if not (line is None):
+                line = sanitize.modpad_tensor(line, (128, 128))
+                recons = (recons+1)*(line+1)/2-1
+                recons = torch.clamp(recons,-1,1)
+            recons = recons[..., :sizey, :sizex]
             return recons
+        else:
+            raise NotImplementedError

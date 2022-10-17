@@ -51,6 +51,10 @@ Download the pre-trained models from [Google Drive](https://drive.google.com/fil
 Check api.py for detail.  
 Here is an example.  
 ```python
+# Manually include path to this project (the 'ScreenStyle' folder) in sys.path
+import sys
+sys.path.append('/path/to/this/project')
+
 # import API
 from ScreenVAE import SVAE
 
@@ -70,3 +74,39 @@ retone = rec.map2img(scr)
 # You may make use of lines like this:
 retone = np.where(line<128, line, retone)
 ```
+Your can process multiple images **with the same shape** in one shot.  
+But for batch functions you can only provide list of numpy arrays or a numpy array that is concatenated from image arrays.  
+DO NOT TRY TO RESIZE IMAGES TO FIT THEM TO THE SAME SIZE because it will destroy screentones, but feel free to resize screenmaps because they are interpolative.  
+```python
+from PIL import Image
+import numpy as np
+from ScreenVAE import SVAE
+
+rec = SVAE(freeze_seed=0)
+img_paths = ['/path/to/your/image1', '/path/to/your/image2', ...]
+imgs = [np.asarray(Image.open(p)) for p in img_paths]
+line_paths = ['/path/to/your/line1', '/path/to/your/line2', ...]
+lines = [np.asarray(Image.open(p)) for p in line_paths]
+scrs = rec.img2map_batch(imgs, lines)
+```
+
+## Training
+I've implemented the 4 loss functions mentioned in the paper. However, there are something unclear:  
+- Adversarial Loss  
+  - The discriminator used in adversarial_loss is `learnable`, but @msxie92 didn't provide a checkpoint.  
+  - Also, the detail of the discriminator itself is unclear. (What is "4 strided downscaling blocks"?).  
+- Superpixel Loss
+  - They used L0-Smoothing and SLIC, but the params of these 2 algorithms remain unknown.
+  - They used SPN, but which? (likely to be https://github.com/idealwei/SuperPixelPool.pytorch) And how did they use it??? It seems that they only borrow its loss function.
+  - They say:
+    > Then we remove the varying-toned regions from `Ispp` by estimating regional texture feature variances. In particular, if two regions are of the same tone but with different textures, we separate the regions into two superpixels in the superpixel map `Ispp`.  
+    
+    But how did they do that???  
+    (According to the code, they may have used gaborwavelet for texture analysis)  
+
+My implementation:  
+- Adversarial Loss  
+  - I eventually copied the discriminator from the style extractor Est (which have "5 strided downscaling blocks").  
+    - It is like the implementation of wgan-gp.  
+- Superpixel Loss  
+  - I decide to make the obtainment of superpixel map `Ispp` a step of preprocessing, just like the usage of line extraction. (`Ispp` only depends on original manga image `Im`)  

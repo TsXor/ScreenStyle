@@ -1,10 +1,13 @@
-from .api import ScreenVAE_rec as SVAE
 import matplotlib.pyplot as plt
 import tkinter.filedialog as tkfd
-import pathlib
-from .lib import sanitize as sanitize
 import numpy as np
 from skimage.segmentation import flood, flood_fill
+import pathlib, sys
+
+PROJECT_ROOT = pathlib.Path(__file__).parent / '..'
+sys.path.append(str(PROJECT_ROOT))
+from ScreenVAE import SVAE
+import sanitize
 
 
 def fillin_smap(img, scr, seedpt=(10,10)):
@@ -20,8 +23,8 @@ def fillin_smap(img, scr, seedpt=(10,10)):
 def main(imdir=None):
     if imdir is None:
         imdir = tkfd.askdirectory(title='choose input directory of pictures')
-        imdir = imdir if imdir else 'examples' # default to examples if cancelled
-        imdir = pathlib.Path(imdir)
+        # default to examples if cancelled
+        imdir = pathlib.Path(imdir) if imdir else pathlib.Path(__file__).parent / 'examples'
     rec = SVAE(freeze_seed=0)
     img = sanitize.PILread(imdir/'manga.png')
     line = sanitize.PILread(imdir/'line.png')

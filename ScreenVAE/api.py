@@ -1,11 +1,15 @@
+from typing import Union, List
+
 import torch
 from .models.screenvae import ScreenVAE
 
 import numpy as np
 from sklearn.decomposition import PCA
 
-import pathlib
-from .lib import sanitize as sanitize
+import pathlib, sys
+PROJECT_ROOT = pathlib.Path(__file__).parent / '..'
+sys.path.append(str(PROJECT_ROOT))
+import sanitize
 
 
 def path_check(thing, type='img'):
@@ -19,69 +23,119 @@ def path_check(thing, type='img'):
     return arr
 
 class ScreenVAE_rec:
-    def __init__(self, model_name='ScreenVAE', freeze_seed=None):
+    def __init__(self, model_name='ScreenVAE', freeze_seed=None, device=None):
         self.freeze_seed = freeze_seed
         if not (self.freeze_seed is None):
             torch.manual_seed(self.freeze_seed)
             torch.cuda.manual_seed(self.freeze_seed)
             np.random.seed(self.freeze_seed)
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu") \
+                      if device is None else device
         main_dir = pathlib.Path(__file__).parent
-        self.model = ScreenVAE(inc=1, outc=4, blocks=3, save_dir=str(main_dir/'checkpoints'/model_name), device=device)
+        self.model_trainable = ScreenVAE(
+            inc=1,
+            outc=4,
+            blocks=3,
+            save_dir=str(main_dir/'checkpoints'/model_name),
+            device=self.device
+        )
+        self.model = self.model_trainable.eval()
 
-    def eval(self, mode, *input):
+    def exec(self, mode: str, *input):
         if mode=='encode':
             img, line = input
-            img = sanitize.PILconvert(img, 'L')
-            line = sanitize.PILconvert(line, 'L')
-            sizey, sizex = img.shape
-            img = sanitize.modpad(img, (16,16))
-            line = sanitize.modpad(line, (16,16))
-            img_torch = torch.from_numpy(img[np.newaxis,np.newaxis,...]).float()
-            line_torch = torch.from_numpy(line[np.newaxis,np.newaxis,...]).float()
+            img = img[np.newaxis,...] if img.ndim==2 else img
+            line = line[np.newaxis,...] if line.ndim==2 else line
+            img = img[:,np.newaxis,:,:]
+            line = line[:,np.newaxis,:,:]
+            img_torch = torch.from_numpy(img.copy()).float()
+            line_torch = torch.from_numpy(line.copy()).float()
             img_torch = sanitize.squash(img_torch)
             line_torch = sanitize.squash(line_torch)
-            img_torch = sanitize.todev(img_torch)
-            line_torch = sanitize.todev(line_torch)
+            img_torch = img_torch.to(self.device)
+            line_torch = line_torch.to(self.device)
             if not (self.freeze_seed is None):
                 torch.manual_seed(self.freeze_seed)
                 torch.cuda.manual_seed(self.freeze_seed)
                 np.random.seed(self.freeze_seed)
-            ret_torch = self.model(mode, img_torch, line_torch)
+            ret_torch, _ = self.model(mode, img_torch, line_torch)
             ret_torch = ret_torch.detach()
             scr_torch = ret_torch*(line_torch+1)/2
             scr_torch = scr_torch.cpu()
-            scr = scr_torch.numpy()[0]
-            scr = scr[:, 0:sizey, 0:sizex]
+            scr = np.squeeze(scr_torch.numpy())
             return scr
         elif mode=='decode':
-            scr = input[0]
-            sizez, sizey, sizex = scr.shape
-            scr = sanitize.modpad(scr, (0,128,128))
+            scr, line = input
             scr_torch = torch.from_numpy(scr)
-            scr_torch = scr_torch.unsqueeze(0).float()
+            scr_torch = scr_torch.unsqueeze(0) if scr_torch.ndim==3 else scr_torch
+            scr_torch = scr_torch.float()
+            scr_torch = scr_torch.to(self.device)
+            if line is None:
+                line_torch = None
+            else:
+                line_torch = torch.from_numpy(line)
+                line_torch = line_torch.float()
+                line_torch = line_torch.to(self.device)
             if not (self.freeze_seed is None):
                 torch.manual_seed(self.freeze_seed)
                 torch.cuda.manual_seed(self.freeze_seed)
                 np.random.seed(self.freeze_seed)
-            recons_torch = self.model(mode, sanitize.todev(scr_torch))
+            recons_torch = self.model(mode, scr_torch, line_torch)
             recons_torch = sanitize.unsquash(recons_torch)
             recons_torch = recons_torch.cpu().detach()
-            recons = recons_torch.numpy()[0,0]
-            recons = recons[0:sizey, 0:sizex]
+            recons = np.squeeze(recons_torch.numpy())
             recons = sanitize.any2pic(recons, method='clip')
             return recons
         else:
             return
 
-    def img2map(self, img, line):
+    def img2map(self,
+        img: Union[str, pathlib.Path, np.ndarray],
+        line: Union[str, pathlib.Path, np.ndarray]
+    ) -> np.ndarray :
         img = path_check(img)
         line = path_check(line)
-        return self.eval('encode', img, line)
+        img = sanitize.PILconvert(img, 'L')
+        line = sanitize.PILconvert(line, 'L')
+        with torch.no_grad():
+            ret = self.exec('encode', img, line)
+        return ret
 
-    def map2img(self, scr):
+    def map2img(self,
+        scr: Union[str, pathlib.Path, np.ndarray]
+    ) -> np.ndarray :
         scr = path_check(scr, type='npy')
-        return self.eval('decode', scr)
+        with torch.no_grad():
+            ret = self.exec('decode', scr, None)
+        return ret
+
+    def img2map_batch(self,
+        img: Union[List[np.ndarray], np.ndarray],
+        line: Union[List[np.ndarray], np.ndarray]
+    ) -> List[np.ndarray] :
+        if not (isinstance(img, np.ndarray) and isinstance(line, np.ndarray)):
+            imgshapes = [i.shape for i in img]
+            lineshapes = [l.shape for l in line]
+            assert (imgshapes[0])*len(img) == imgshapes == lineshapes
+        img = [sanitize.PILconvert(i, 'L') for i in img]
+        line = [sanitize.PILconvert(l, 'L') for l in line]
+        img = np.array(img)
+        line = np.array(line)
+        with torch.no_grad():
+            ret = self.exec('encode', img, line)
+        ret = [r for r in ret]
+        return ret
+
+    def map2img_batch(self,
+        scr: Union[List[np.ndarray], np.ndarray]
+    ) -> List[np.ndarray] :
+        if not isinstance(scr, np.ndarray):
+            scrshapes = [s.shape for s in scr]
+            assert (scrshapes[0])*len(scr) == scrshapes
+        with torch.no_grad():
+            ret = self.exec('decode', scr, None)
+        ret = [r for r in ret]
+        return ret
 
     @staticmethod
     def get_pca(scr):
