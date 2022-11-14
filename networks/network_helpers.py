@@ -4,11 +4,6 @@ import torch.nn.init as init
 import torch.nn.modules.normalization as t_n; LayerNorm = t_n.LayerNorm
 import functools
 
-import pathlib, sys
-PROJECT_ROOT = pathlib.Path(__file__).parent / '..'
-sys.path.append(str(PROJECT_ROOT))
-import sanitize
-
 ###############################################################################
 # Helper functions
 ###############################################################################

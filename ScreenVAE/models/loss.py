@@ -1,3 +1,7 @@
+import pathlib, sys
+PROJECT_ROOT = pathlib.Path(__file__).parent / '..' / '..'
+sys.path.append(str(PROJECT_ROOT))
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -5,9 +9,6 @@ from torch.nn.utils import spectral_norm
 from torch.autograd import Variable
 from torch.autograd import grad as torch_grad
 
-import pathlib, sys
-PROJECT_ROOT = pathlib.Path(__file__).parent / '..' / '..'
-sys.path.append(str(PROJECT_ROOT))
 import networks
 
 

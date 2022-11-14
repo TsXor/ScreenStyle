@@ -1,11 +1,12 @@
+import pathlib, sys
+PROJECT_ROOT = pathlib.Path(__file__).parent / '..'
+sys.path.append(str(PROJECT_ROOT))
+
 import matplotlib.pyplot as plt
 import tkinter.filedialog as tkfd
 import numpy as np
 from skimage.segmentation import flood, flood_fill
-import pathlib, sys
 
-PROJECT_ROOT = pathlib.Path(__file__).parent / '..'
-sys.path.append(str(PROJECT_ROOT))
 from ScreenVAE import SVAE
 import sanitize
 

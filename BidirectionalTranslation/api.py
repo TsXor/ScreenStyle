@@ -4,11 +4,10 @@ sys.path.append(str(PROJECT_ROOT))
 
 from typing import Union, List
 
-import torch
-from .models.screenvae import ScreenVAE
-
+import cv2
 import numpy as np
-from sklearn.decomposition import PCA
+import torch
+from .models.cyclegan_stft_model import CycleGANSTFTModel
 
 import sanitize
 
@@ -23,8 +22,8 @@ def path_check(thing, type='img'):
         arr = thing
     return arr
 
-class ScreenVAE_rec:
-    def __init__(self, model_name='ScreenVAE', freeze_seed=None, device=None):
+class BidirectionalTranslation_cvt:
+    def __init__(self, model_name='BidirectionalTranslation', freeze_seed=None, device=None):
         self.freeze_seed = freeze_seed
         if not (self.freeze_seed is None):
             torch.manual_seed(self.freeze_seed)
@@ -33,19 +32,23 @@ class ScreenVAE_rec:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu") \
                       if device is None else device
         main_dir = pathlib.Path(__file__).parent
-        self.model_trainable = ScreenVAE(
-            inc=1,
-            outc=4,
-            blocks=3,
-            save_dir=str(main_dir/'checkpoints'/model_name),
+        self.model = CycleGANSTFTModel(
+            output_nc=3,
+            nz=64,
+            nef=48,
+            ngf=48,
+            init_gain=0.02,
+            checkpoints_dir=str(main_dir/'checkpoints'),
+            name=model_name,
             device=self.device
         )
-        self.model = self.model_trainable.eval()
+        self.model.eval()
 
     def exec(self, mode: str, *input):
-        if mode=='encode':
+        if mode=='AtoB':
             img, line = input
-            img_torch = sanitize.gray2tensor(img)
+            line = cv2.erode(line, np.ones((3,3), np.uint8))
+            img_torch = sanitize.rgb2tensor(img)
             line_torch = sanitize.gray2tensor(line)
             img_torch = img_torch.to(self.device)
             line_torch = line_torch.to(self.device)
@@ -53,49 +56,52 @@ class ScreenVAE_rec:
                 torch.manual_seed(self.freeze_seed)
                 torch.cuda.manual_seed(self.freeze_seed)
                 np.random.seed(self.freeze_seed)
-            ret_torch, _ = self.model(mode, img_torch, line_torch)
-            ret_torch = ret_torch.detach()
-            scr_torch = ret_torch*(line_torch+1)/2
-            scr_torch = scr_torch.cpu()
+            scr_torch = self.model(mode, img_torch, line_torch)
+            scr_torch = scr_torch.detach().cpu()
             scr = np.squeeze(scr_torch.numpy())
             return scr
-        elif mode=='decode':
-            scr, line = input
+        elif mode=='BtoA':
+            scr, line, styref = input
             scr_torch = torch.from_numpy(scr)
             scr_torch = scr_torch.unsqueeze(0) if scr_torch.ndim==3 else scr_torch
             scr_torch = scr_torch.to(self.device)
-            line_torch = None if line is None else sanitize.gray2tensor(line).to(self.device)
+            line_torch = sanitize.gray2tensor(line).to(self.device)
+            styref = self.model.get_z_random(scr_torch.shape[0], 64, truncation=True, tvalue=1.25) \
+                     if styref is None else \
+                     torch.from_numpy(styref.copy()).float() 
             if not (self.freeze_seed is None):
                 torch.manual_seed(self.freeze_seed)
                 torch.cuda.manual_seed(self.freeze_seed)
                 np.random.seed(self.freeze_seed)
-            recons_torch = self.model(mode, scr_torch, line_torch)
-            recons_torch = sanitize.unsquash(recons_torch)
-            recons_torch = recons_torch.detach().cpu()
-            recons = np.squeeze(recons_torch.numpy().transpose((1, 0, 2, 3)))
-            recons = sanitize.any2pic(recons, method='clip')
-            return recons
+            color_torch = self.model(mode, scr_torch, line_torch, styref)
+            color_torch = sanitize.unsquash(color_torch)
+            color_torch = color_torch.detach().cpu()
+            color = np.squeeze(color_torch.numpy().transpose((0, 2, 3, 1)))
+            color = sanitize.any2pic(color, method='clip')
+            return color
         else:
             return
 
-    def img2map(self,
+    def color2map(self,
         img: Union[str, pathlib.Path, np.ndarray],
         line: Union[str, pathlib.Path, np.ndarray]
     ) -> np.ndarray :
         img = path_check(img)
         line = path_check(line)
-        img = sanitize.PILconvert(img, 'L')
+        img = sanitize.PILconvert(img, 'RGB')
         line = sanitize.PILconvert(line, 'L')
         with torch.no_grad():
-            ret = self.exec('encode', img, line)
+            ret = self.exec('AtoB', img, line)
         return ret
 
-    def map2img(self,
-        scr: Union[str, pathlib.Path, np.ndarray]
+    def map2color(self,
+        scr: Union[str, pathlib.Path, np.ndarray],
+        line: Union[str, pathlib.Path, np.ndarray]
     ) -> np.ndarray :
         scr = path_check(scr, type='npy')
+        line = path_check(line)
         with torch.no_grad():
-            ret = self.exec('decode', scr, None)
+            ret = self.exec('BtoA', scr, line, None)
         return ret
 
     def img2map_batch(self,
@@ -106,35 +112,26 @@ class ScreenVAE_rec:
             imgshapes = [i.shape[:2] for i in img]
             lineshapes = [l.shape[:2] for l in line]
             assert (imgshapes[0])*len(img) == imgshapes == lineshapes
-        img = [sanitize.PILconvert(i, 'L') for i in img]
+        img = [sanitize.PILconvert(i, 'RGB') for i in img]
         line = [sanitize.PILconvert(l, 'L') for l in line]
         img = np.array(img)
         line = np.array(line)
         with torch.no_grad():
-            ret = self.exec('encode', img, line)
+            ret = self.exec('AtoB', img, line)
         ret = [r for r in ret]
         return ret
 
     def map2img_batch(self,
-        scr: Union[List[np.ndarray], np.ndarray]
+        scr: Union[List[np.ndarray], np.ndarray],
+        line: Union[List[np.ndarray], np.ndarray]
     ) -> List[np.ndarray] :
         if not isinstance(scr, np.ndarray):
             scrshapes = [s.shape[-2:] for s in scr]
-            assert (scrshapes[0])*len(scr) == scrshapes
+            lineshapes = [l.shape[:2] for l in line]
+            assert (scrshapes[0])*len(scr) == scrshapes == lineshapes
+        line = [sanitize.PILconvert(l, 'L') for l in line]
+        line = np.array(line)
         with torch.no_grad():
-            ret = self.exec('decode', scr, None)
+            ret = self.exec('BtoA', scr, line, None)
         ret = [r for r in ret]
         return ret
-
-    @staticmethod
-    def get_pca(scr):
-        result = np.concatenate([im.reshape(1,-1) for im in scr], axis=0)
-        pca = PCA(n_components=3)
-        pca.fit(result)
-        result = pca.components_.copy()
-        result = result.transpose().reshape((scr.shape[1], scr.shape[2], 3))
-        for i in range(3):
-            tmppic = result[:,:,i]
-            result[:,:,i] = (tmppic - tmppic.min()) / (tmppic.max() - tmppic.min())
-            # cv2.normalize(tmppic,resultPic[:,:,i],0,255,dtype=cv2.NORM_MINMAX)
-        return result

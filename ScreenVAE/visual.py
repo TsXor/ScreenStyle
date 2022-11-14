@@ -1,16 +1,11 @@
-import pygubu, pathlib, sys
-from PIL import ImageTk, Image
-
-import torch
-import numpy as np
-
-PROJECT_ROOT = pathlib.Path(__file__).parent / '..'
-sys.path.append(str(PROJECT_ROOT))
-from ScreenVAE import SVAE
-import sanitize
-
+import pygubu, pathlib
 PROJECT_PATH = pathlib.Path(__file__).parent
 PROJECT_UI = PROJECT_PATH / "view_pattern.ui"
+
+from PIL import ImageTk, Image
+import numpy as np
+from ScreenVAE import ScreenVAE_rec as SVAE
+
 w, h = (768, 256)
 rec = None
 

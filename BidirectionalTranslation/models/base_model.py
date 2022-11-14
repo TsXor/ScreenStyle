@@ -1,10 +1,13 @@
 import os
-import torch
 from collections import OrderedDict
 from abc import ABC, abstractmethod
-from . import networks
+
 import numpy as np
+
+import torch
 from torch.nn.parallel import DistributedDataParallel as DDP
+import torch.optim.lr_scheduler as lr_scheduler
+
 
 class BaseModel(ABC):
     """This class is an abstract base class (ABC) for models.
@@ -16,7 +19,14 @@ class BaseModel(ABC):
         -- <modify_commandline_options>:    (optionally) add model-specific options and set default options.
     """
 
-    def __init__(self, opt):
+    def __init__(
+        self,
+        isTrain=False,
+        continue_train=False,
+        epoch='latest',
+        checkpoints_dir='.checkpoints',
+        verbose=False,
+    ):
         """Initialize the BaseModel class.
 
         Parameters:
@@ -30,27 +40,25 @@ class BaseModel(ABC):
             -- self.visual_names (str list):        define networks used in our training.
             -- self.optimizers (optimizer list):    define and initialize optimizers. You can define one optimizer for each network. If two networks are updated at the same time, you can use itertools.chain to group them. See cycle_gan_model.py for an example.
         """
-        self.opt = opt
-        self.gpu_ids = opt.gpu_ids
-        self.isTrain = opt.isTrain
+        self.isTrain = isTrain
+        self.continue_train = continue_train
+        self.epoch = epoch
+        self.verbose = verbose
         self.iter = 0
         self.last_iter = 0
-        self.device = torch.device('cuda:{}'.format(
-            self.gpu_ids[0])) if self.gpu_ids else torch.device('cpu')  # get device name: CPU or GPU
         # save all the checkpoints to save_dir
-        self.save_dir = os.path.join(opt.checkpoints_dir, opt.name)
+        self.save_dir = os.path.join(checkpoints_dir, self.name)
         try:
             os.mkdir(self.save_dir)
         except:
             pass
         # with [scale_width], input images might have different sizes, which hurts the performance of cudnn.benchmark.
-        if opt.preprocess != 'scale_width':
-            torch.backends.cudnn.benchmark = True
+        torch.backends.cudnn.benchmark = True
         self.loss_names = []
         self.model_names = []
         self.visual_names = []
         self.optimizers = []
-        self.image_paths = []
+        self.sched_opts = []
 
         self.label_colours = np.random.randint(255, size=(100,3))
 
@@ -59,28 +67,6 @@ class BaseModel(ABC):
         b,h,w = l_inds.shape
         im_target_rgb = im_target_rgb.reshape(b,h,w,3).transpose(0,3,1,2)/127.5-1.0
         return torch.from_numpy(im_target_rgb)
-
-    @staticmethod
-    def modify_commandline_options(parser, is_train):
-        """Add new model-specific options, and rewrite default values for existing options.
-
-        Parameters:
-            parser          -- original option parser
-            is_train (bool) -- whether training phase or test phase. You can use this flag to add training-specific or test-specific options.
-
-        Returns:
-            the modified parser.
-        """
-        return parser
-
-    @abstractmethod
-    def set_input(self, input):
-        """Unpack input data from the dataloader and perform necessary pre-processing steps.
-
-        Parameters:
-            input (dict): includes the data itself and its metadata information.
-        """
-        pass
 
     @abstractmethod
     def forward(self):
@@ -96,18 +82,45 @@ class BaseModel(ABC):
         """Calculate losses, gradients, and update network weights; called in every training iteration"""
         pass
 
-    def setup(self, opt):
+    @staticmethod
+    def get_scheduler(optimizer, lr_policy, opt):
+        """Return a learning rate scheduler
+        Parameters:
+            optimizer          -- the optimizer of the network
+            opt (option class) -- stores all the experiment flags; needs to be a subclass of BaseOptions.
+                                opt.lr_policy is the name of learning rate policy: linear | step | plateau | cosine
+        For 'linear', we keep the same learning rate for the first <opt.niter> epochs
+        and linearly decay the rate to zero over the next <opt.niter_decay> epochs.
+        For other schedulers (step, plateau, and cosine), we use the default PyTorch schedulers.
+        See https://pytorch.org/docs/stable/optim.html for more details.
+        """
+        if lr_policy == 'linear':
+            def lambda_rule(epoch):
+                lr_l = 1.0 - max(0, epoch + opt['epoch_count'] - opt['niter']) / float(opt['niter_decay'] + 1)
+                return lr_l
+            scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda_rule)
+        elif lr_policy == 'step':
+            scheduler = lr_scheduler.StepLR(optimizer, step_size=opt['lr_decay_iters'], gamma=0.1)
+        elif lr_policy == 'plateau':
+            scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.2, threshold=0.01, patience=5)
+        elif lr_policy == 'cosine':
+            scheduler = lr_scheduler.CosineAnnealingLR(optimizer, T_max=opt['niter'], eta_min=0)
+        else:
+            return NotImplementedError('learning rate policy [%s] is not implemented', opt['lr_policy'])
+        return scheduler
+
+    def setup(self):
         """Load and print networks; create schedulers
 
         Parameters:
             opt (Option class) -- stores all the experiment flags; needs to be a subclass of BaseOptions
         """
         if self.isTrain:
-            self.schedulers = [networks.get_scheduler(
-                optimizer, opt) for optimizer in self.optimizers]
-        if not self.isTrain or opt.continue_train:
-            self.load_networks(opt.epoch)
-        self.print_networks(opt.verbose)
+            self.schedulers = [self.get_scheduler(optimizer, opt) 
+                for optimizer, opt in zip(self.optimizers, self.sched_opts)]
+        if not self.isTrain or self.continue_train:
+            self.load_networks(self.epoch)
+        self.print_networks(self.verbose)
 
     def eval(self):
         """Make models eval mode during test time"""
@@ -116,50 +129,12 @@ class BaseModel(ABC):
                 net = getattr(self, 'net' + name)
                 net.eval()
 
-    def test(self):
-        """Forward function used in test time.
-
-        This function wraps <forward> function in no_grad() so we don't save intermediate steps for backprop
-        It also calls <compute_visuals> to produce additional visualization results
-        """
-        with torch.no_grad():
-            self.forward()
-            self.compute_visuals()
-
-    def compute_visuals(self):
-        """Calculate additional output images for visdom and HTML visualization"""
-        pass
-
-    def get_image_paths(self):
-        """ Return image paths that are used to load current data"""
-        return self.image_paths
-
     def update_learning_rate(self):
         """Update learning rates for all the networks; called at the end of every epoch"""
         for scheduler in self.schedulers:
             scheduler.step()
         lr = self.optimizers[0].param_groups[0]['lr']
         print('learning rate = %.7f' % lr)
-
-    def get_current_visuals(self):
-        """Return visualization images. train.py will display these images with visdom, and save the images to a HTML"""
-        visual_ret = OrderedDict()
-        for name in self.visual_names:
-            if isinstance(name, str):
-                if 'Lab' in name:
-                    labimg = getattr(self, name).cpu()
-                    labimg[:,0,:,:]+=1
-                    labimg[:,0,:,:]*=50
-                    labimg[:,1:,:,:] *= 110
-                    labimg = labimg.permute((0,2,3,1))
-                    for i in range(labimg.shape[0]):
-                        labimg[i,:,:,:]=lab2rgb(labimg[i,:,:,:])
-                    visual_ret[name] = (labimg.permute((0,3,1,2))*2-1.0).to(self.device)
-                elif 'Fm' in name:
-                    visual_ret[name] = self.save_suppixel(getattr(self, name).cpu()).to(self.device)
-                else:
-                    visual_ret[name] = getattr(self, name)
-        return visual_ret
 
     def get_current_losses(self):
         """Return traning losses / errors. train.py will print out these errors on console, and save them to a file"""
@@ -191,26 +166,10 @@ class BaseModel(ABC):
 
         save_filename = '%s_net_opt.pth' % (epoch)
         save_path = os.path.join(self.save_dir, save_filename)
-        save_dict = {'iter': str(self.iter // self.opt.print_freq * self.opt.print_freq)}
+        save_dict = {'iter': str(self.iter // self.print_freq * self.print_freq)}
         for i, name in enumerate(self.optimizer_names):
             save_dict.update({name.lower(): self.optimizers[i].state_dict()})
         torch.save(save_dict, save_path)
-
-
-    def __patch_instance_norm_state_dict(self, state_dict, module, keys, i=0):
-        """Fix InstanceNorm checkpoints incompatibility (prior to 0.4)"""
-        key = keys[i]
-        if i + 1 == len(keys):  # at the end, pointing to a parameter/buffer
-            if module.__class__.__name__.startswith('InstanceNorm') and \
-                    (key == 'running_mean' or key == 'running_var'):
-                if getattr(module, key) is None:
-                    state_dict.pop('.'.join(keys))
-            if module.__class__.__name__.startswith('InstanceNorm') and \
-               (key == 'num_batches_tracked'):
-                state_dict.pop('.'.join(keys))
-        else:
-            self.__patch_instance_norm_state_dict(
-                state_dict, getattr(module, key), keys, i + 1)
 
     def load_networks(self, epoch):
         """Load all the networks from the disk.
@@ -230,8 +189,7 @@ class BaseModel(ABC):
                 print('loading the model from %s' % load_path)
                 # if you are using PyTorch newer than 0.4 (e.g., built from
                 # GitHub source), you can remove str() on self.device
-                state_dict = torch.load(
-                    load_path, map_location=lambda storage, loc: storage.cuda())
+                state_dict = torch.load(load_path, map_location=self.device)
                 if hasattr(state_dict, '_metadata'):
                     del state_dict._metadata
 
@@ -275,3 +233,6 @@ class BaseModel(ABC):
             if net is not None:
                 for param in net.parameters():
                     param.requires_grad = requires_grad
+
+    def __call__(self, *args, **kwargs):
+        return self.forward(*args, **kwargs)

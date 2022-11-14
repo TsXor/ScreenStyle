@@ -2,8 +2,6 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from PIL import Image
-import torchvision.transforms as transforms
-import pathlib
 
 def PILopen(path, astype=None):
     opened = np.asarray(Image.open(str(path))) \
@@ -19,26 +17,35 @@ def PILsave(img, path):
 def PILconvert(img, mode):
     return np.asarray(Image.fromarray(img).convert(mode))
 
+def togray(arr, batch=False):
+    naxis = len(arr.shape)
+    if batch: naxis -= 1
+    if naxis == 2:
+        return arr
+    elif naxis == 3: # input image should be RGB
+        return arr[..., 0] * 0.299 + arr[..., 1] * 0.587 + arr[..., 2] * 0.114
+
 def PILshow(img):
     Image.fromarray(img).show()
 
 def modpad(img, mods, mode='linear_ramp', **kwargs):
     pads = tuple(mod-s%mod if mod else 0 for s, mod in zip(img.shape, mods))
-    padded = np.pad(img, tuple((0, pad) for pad in pads), mode, **kwargs)
+    padded = np.pad(img, [(0, pad) for pad in pads], mode, **kwargs)
     return padded
 
-def img_modpad(img, mods, mode='linear_ramp', **kwargs):
+def modpad_img(img, mods, mode='linear_ramp', **kwargs):
     padded = modpad(img, (*mods, (0, 0)), mode, **kwargs) \
              if img.shape[2:]==(3,) else \
              modpad(img, mods, mode, **kwargs)
     return padded
 
-def modpad_tensor(tensor, mods, dims=2):
-    pads = tuple(mod-s%mod if mod else 0 for s, mod in zip(tensor.shape, mods))
-    pads = [[p, 0] for p in pads]
-    pads = sum(pads, []); pads.reverse()
-    pads = pads[:2*dims]
-    padded = F.pad(tensor, pads, mode='replicate')
+def modpad_tensor(tensor, mods, mode, **kwargs):
+    H, W = tensor.shape[-2:]
+    modH, modW = mods
+    padH = modH - H % modH
+    padW = modW - W % modW
+    pads = (0, padW, 0, padH)
+    padded = F.pad(tensor, pads, mode, **kwargs)
     return padded
 
 def squash(arr):
@@ -57,15 +64,16 @@ def any2pic(arr, method='squash'):
     arr = arr.astype(np.uint8)
     return arr
 
-tfunc = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-])
-tfunc_gray = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.5,), (0.5,))
-])
+def gray2tensor(img):
+    img = img[np.newaxis,...] if img.ndim==2 else img
+    img = img[:,np.newaxis,:,:]
+    img_torch = torch.from_numpy(img.copy()).float()
+    img_torch = squash(img_torch)
+    return img_torch
 
-def img_normalize(img):
-    notgray = img.shape[2:]==(3,)
-    return tfunc(img) if notgray else tfunc_gray(img)
+def rgb2tensor(img):
+    img = img[np.newaxis,...] if img.ndim==3 else img
+    img = img.transpose((0, 3, 1, 2))
+    img_torch = torch.from_numpy(img.copy()).float()
+    img_torch = squash(img_torch)
+    return img_torch
