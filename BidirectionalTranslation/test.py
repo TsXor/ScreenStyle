@@ -1,3 +1,55 @@
+import pathlib, sys
+SELF_PATH = pathlib.Path(__file__).parent
+PROJECT_ROOT = SELF_PATH / '..'
+sys.path.append(str(PROJECT_ROOT))
+
+from ScreenVAE import SVAE
+from BidirectionalTranslation import BT
+rec = SVAE(freeze_seed=0)
+cvt = BT(freeze_seed=10)
+
+import sanitize
+IMAGE_SUFFIXES = ['jpg', 'png', 'bmp']
+def image_paths(path):
+    return [f for f in path.iterdir() if any([str(f).endswith(sfx) for sfx in IMAGE_SUFFIXES])]
+
+
+DATASET_PATH = SELF_PATH / 'examples'
+MANGA_PATH = DATASET_PATH / 'manga_paper'
+COLOR_PATH = DATASET_PATH / 'western_paper'
+
+mangas = image_paths(MANGA_PATH / 'imgs')
+colors = image_paths(COLOR_PATH / 'imgs')
+
+for imgpath in mangas:
+    print('Processing %s ...'%str(imgpath))
+    img = sanitize.PILopen(imgpath, 'L')
+    linepath = next((imgpath.parent.parent/'line').glob('%s.*' % imgpath.stem))
+    line = sanitize.PILopen(linepath, 'L')
+    outpath = imgpath.parent.parent / 'results' / (imgpath.stem + '.png')
+    print(imgpath, linepath, outpath)
+    scr = rec.img2map(img, line)
+    color = cvt.map2color(scr, line)
+    sanitize.PILsave(color, outpath)
+    print('Saved at %s .'%str(outpath))
+
+for imgpath in colors:
+    print('Processing %s ...'%str(imgpath))
+    img = sanitize.PILopen(imgpath, 'RGB')
+    linepath = next((imgpath.parent.parent/'line').glob('%s.*' % imgpath.stem))
+    line = sanitize.PILopen(linepath, 'L')
+    outpath = imgpath.parent.parent / 'results' / (imgpath.stem + '.png')
+    print(imgpath, linepath, outpath)
+    scr = cvt.color2map(img, line)
+    manga = rec.map2img(scr)
+    manga = rec.apply_line(manga, line)
+    sanitize.PILsave(manga, outpath)
+    print('Saved at %s .'%str(outpath))
+
+exit()
+
+# original part is reserved for developing features in the future
+
 import os
 from options.test_options import TestOptions
 from data import create_dataset

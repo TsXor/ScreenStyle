@@ -98,6 +98,10 @@ class ScreenVAE_rec:
             ret = self.exec('decode', scr, None)
         return ret
 
+    @staticmethod
+    def apply_line(img, line):
+        return np.where(line<128, line, img)
+
     def img2map_batch(self,
         img: Union[List[np.ndarray], np.ndarray],
         line: Union[List[np.ndarray], np.ndarray]

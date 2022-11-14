@@ -106,7 +106,7 @@ class CycleGANSTFTModel(BaseModel):
         if mode=='AtoB':
             h, w = img.shape[-2:]
             img = padtensor(img); line = padtensor(line)
-            img_and_line = torch.cat([line, img],1)
+            img_and_line = torch.cat([line, img], 1)
             scrmap = self.netG_RGB2INTSCR(img_and_line)
             return scrmap[:, :, :h, :w]
         elif mode=='BtoA':
