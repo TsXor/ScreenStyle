@@ -72,7 +72,7 @@ PCAimg = rec.get_pca(scr)
 # You may use path (to a saved .npy file) or numpy array here.
 retone = rec.map2img(scr)
 # You may make use of lines like this:
-retone = np.where(line<128, line, retone)
+retone = rec.apply_line(retone, line)
 ```
 Your can process multiple images **with the same shape** in one shot.  
 But for batch functions you can only provide list of numpy arrays or a numpy array that is concatenated from image arrays.  

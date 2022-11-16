@@ -88,12 +88,14 @@ from BidirectionalTranslation import BT
 # Initialize an API object.
 # You can choose to load other directories under checkpoints/ by passing their name as argument.
 # It is recommended to freeze the seed for ramdom number to 10 to replicate the performance in paper.
-rec = SVAE(freeze_seed=0)
+rec = SVAE(freeze_seed=10)
 cvt = BT(freeze_seed=10)
 # Get colored image with map2color method.
 # You may use path (to a saved .npy file) or numpy array here.
-scr = rec.img2map('examples/manga.png', 'examples/line.png')
-color = cvt.map2color(scr, 'examples/line.png')
+# When parameter rawscr is True, screenmap will be torch.Tensor,
+# which may avoid moving it between cpu and gpu memory and possible precision loss.
+scr = rec.img2map('examples/manga.png', 'examples/line.png', rawscr=True)
+color = cvt.map2color(scr, 'examples/line.png', rawscr=True)
 # Convert colored image back to screenmap with map2img method.
 # You may use path (to an image) or numpy array here.
 rescr = cvt.color2map(color, 'examples/line.png')
@@ -108,14 +110,14 @@ import numpy as np
 from ScreenVAE import SVAE
 from BidirectionalTranslation import BT
 
-rec = SVAE(freeze_seed=0)
+rec = SVAE(freeze_seed=10)
 cvt = BT(freeze_seed=10)
 img_paths = ['/path/to/your/image1', '/path/to/your/image2', ...]
 imgs = [np.asarray(Image.open(p)) for p in img_paths]
 line_paths = ['/path/to/your/line1', '/path/to/your/line2', ...]
 lines = [np.asarray(Image.open(p)) for p in line_paths]
-scrs = rec.img2map_batch(imgs, lines)
-colors = cvt.map2color(scrs, lines)
+scrs = rec.img2map_batch(imgs, lines, rawscr=True)
+colors = cvt.map2color(scrs, lines, rawscr=True)
 ```
 
 ## Training

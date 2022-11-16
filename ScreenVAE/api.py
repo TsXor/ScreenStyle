@@ -9,7 +9,6 @@ from api_proto import apiProto
 import numpy as np
 import torch
 from .models.screenvae import ScreenVAE
-from .models.screenvae_alt import define_SVAE
 
 from sklearn.decomposition import PCA
 
