@@ -37,6 +37,7 @@ class ScreenVAE(nn.Module):
             norm='layer',
             nl='lrelu',
             use_dropout=True, 
+            init_type=init_type,
             device=device,
             upsample='bilinear'
         )
@@ -49,6 +50,7 @@ class ScreenVAE(nn.Module):
             norm='layer',
             nl='lrelu',
             use_dropout=True,
+            init_type=init_type,
             device=device,
             where_add='input',
             upsample='bilinear',
@@ -85,8 +87,7 @@ class ScreenVAE(nn.Module):
             inter = self.enc(torch.cat([img, line], 1))
             scr, logvar = torch.split(inter, (self.outc, self.outc), dim=1)#[:,:,32:-32,32:-32]
             # scr = scr*torch.sign(line+1)
-            scr = scr[..., :sizey, :sizex]
-            return scr, logvar
+            return scr[..., :sizey, :sizex], logvar[..., :sizey, :sizex]
         elif mode=='decode':
             smap, line = input
             sizey, sizex = smap.shape[-2:]

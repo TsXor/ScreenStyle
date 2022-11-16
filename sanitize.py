@@ -29,7 +29,7 @@ def PILshow(img):
     Image.fromarray(img).show()
 
 def modpad(img, mods, mode='linear_ramp', **kwargs):
-    pads = tuple(mod-s%mod if mod else 0 for s, mod in zip(img.shape, mods))
+    pads = tuple(mod-left if (left := s%mod) else 0 for s, mod in zip(img.shape, mods))
     padded = np.pad(img, [(0, pad) for pad in pads], mode, **kwargs)
     return padded
 
@@ -42,8 +42,10 @@ def modpad_img(img, mods, mode='linear_ramp', **kwargs):
 def modpad_tensor(tensor, mods, mode, **kwargs):
     H, W = tensor.shape[-2:]
     modH, modW = mods
-    padH = modH - H % modH
-    padW = modW - W % modW
+    leftH = H % modH
+    padH = modH - leftH if leftH else 0
+    leftW = W % modW
+    padW = modW - leftW if leftW else 0
     pads = (0, padW, 0, padH)
     padded = F.pad(tensor, pads, mode, **kwargs)
     return padded

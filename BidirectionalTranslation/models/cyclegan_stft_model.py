@@ -19,7 +19,7 @@ def grayscale(input_image):
     rate = torch.Tensor([0.299, 0.587, 0.114]).reshape(1, 3, 1, 1).to(input_image.device)
     return (input_image*rate).sum(1,keepdims=True)
 
-padtensor = lambda tensor: sanitize.modpad_tensor(tensor, (2**8, 2**8), 'constant', value=1)
+padtensor = lambda tensor: sanitize.modpad_tensor(tensor, (2**8, 2**8), 'replicate')
 
 
 class CycleGANSTFTModel(BaseModel):

@@ -33,7 +33,7 @@ def main(imdir=None):
     smap_visualize = rec.get_pca(scr)
     np.save(imdir/'scrmap.npy', scr)
     out = rec.map2img(scr)
-    sanitize.PILshow(np.where(line<128, line, out))
+    sanitize.PILshow(rec.apply_line(out, line))
 
     def onclick(event):
         eventname = 'double' if event.dblclick else 'single'

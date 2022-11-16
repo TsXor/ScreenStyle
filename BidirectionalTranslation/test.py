@@ -1,3 +1,5 @@
+'''注意：此脚本目前color2manga的表现还与原脚本有一些差异。'''
+
 import pathlib, sys
 SELF_PATH = pathlib.Path(__file__).parent
 PROJECT_ROOT = SELF_PATH / '..'
@@ -5,7 +7,7 @@ sys.path.append(str(PROJECT_ROOT))
 
 from ScreenVAE import SVAE
 from BidirectionalTranslation import BT
-rec = SVAE(freeze_seed=0)
+rec = SVAE(freeze_seed=10)
 cvt = BT(freeze_seed=10)
 
 import sanitize
@@ -27,9 +29,8 @@ for imgpath in mangas:
     linepath = next((imgpath.parent.parent/'line').glob('%s.*' % imgpath.stem))
     line = sanitize.PILopen(linepath, 'L')
     outpath = imgpath.parent.parent / 'results' / (imgpath.stem + '.png')
-    print(imgpath, linepath, outpath)
-    scr = rec.img2map(img, line)
-    color = cvt.map2color(scr, line)
+    scr = rec.img2map(img, line, rawscr=True)
+    color = cvt.map2color(scr, line, rawscr=True)
     sanitize.PILsave(color, outpath)
     print('Saved at %s .'%str(outpath))
 
@@ -39,9 +40,8 @@ for imgpath in colors:
     linepath = next((imgpath.parent.parent/'line').glob('%s.*' % imgpath.stem))
     line = sanitize.PILopen(linepath, 'L')
     outpath = imgpath.parent.parent / 'results' / (imgpath.stem + '.png')
-    print(imgpath, linepath, outpath)
-    scr = cvt.color2map(img, line)
-    manga = rec.map2img(scr)
+    scr = cvt.color2map(img, line, rawscr=True)
+    manga = rec.map2img(scr, rawscr=True)
     manga = rec.apply_line(manga, line)
     sanitize.PILsave(manga, outpath)
     print('Saved at %s .'%str(outpath))
